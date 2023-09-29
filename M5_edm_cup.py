@@ -10,6 +10,7 @@ Created on Mon Sep 25 16:35:29 2023
 
 # M4 - Add predictor (fb_time) for the amount of time spent post-response on the same problem
 # (e.g., processing correct/incorrect feedback)
+# This predictor necessarily is confounded by item difficulty, therefore not totally surprising that model did not improve
     # Q: What is the relationship between this measure and gaming-the-system?
 
 #%%
@@ -114,8 +115,11 @@ euts = euts.merge(ar,how='left',on=['unit_test_assignment_log_id','problem_skill
 #%%
 
 # fill NA, would be better to fill with subject mean
-tuts['mean_skill_act_time'].fillna(tuts['mean_skill_act_time'].mean(), inplace=True)
-euts['mean_skill_act_time'].fillna(euts['mean_skill_act_time'].mean(), inplace=True)
+# tuts['mean_skill_act_time'].fillna(tuts['mean_skill_act_time'].mean(), inplace=True)
+# euts['mean_skill_act_time'].fillna(euts['mean_skill_act_time'].mean(), inplace=True)
+# m5.2, fillna with 0 instead of mean
+tuts['mean_skill_act_time'].fillna(0, inplace=True)
+euts['mean_skill_act_time'].fillna(0, inplace=True)
 euts['target_encoded_skill'].fillna(euts['target_encoded_skill'].mean(), inplace=True)
 # # for m4 we added back overall sub skill
 # tuts['mean_c_prop'].fillna(tuts['mean_c_prop'].mean(), inplace=True)
@@ -136,7 +140,7 @@ lr = lr.fit(tuts[input_cols], tuts[target_col])
 # Predict the score for each evaluation problem
 euts[target_col] = lr.predict(euts[input_cols])
 
-euts[['id', 'score']].to_csv(ddir + 'm5.csv', index=False)
+euts[['id', 'score']].to_csv(ddir + 'm5.2.csv', index=False)
 
 #%%
 

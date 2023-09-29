@@ -100,8 +100,11 @@ euts = euts.merge(ar,how='left',on=['unit_test_assignment_log_id','problem_skill
 #%%
 
 # fill NA, would be better to fill with subject mean
-tuts['mean_c_sub_skill_code'].fillna(tuts['mean_c_sub_skill_code'].mean(), inplace=True)
-euts['mean_c_sub_skill_code'].fillna(euts['mean_c_sub_skill_code'].mean(), inplace=True)
+# tuts['mean_c_sub_skill_code'].fillna(tuts['mean_c_sub_skill_code'].mean(), inplace=True)
+# euts['mean_c_sub_skill_code'].fillna(euts['mean_c_sub_skill_code'].mean(), inplace=True)
+# m4.2, fill na with 0 instead of mean
+tuts['mean_c_sub_skill_code'].fillna(0, inplace=True)
+euts['mean_c_sub_skill_code'].fillna(0, inplace=True)
 euts['target_encoded_skill'].fillna(euts['target_encoded_skill'].mean(), inplace=True)
 # for m4 we added back overall sub skill
 tuts['mean_c_prop'].fillna(tuts['mean_c_prop'].mean(), inplace=True)
@@ -122,7 +125,7 @@ lr = lr.fit(tuts[input_cols], tuts[target_col])
 # Predict the score for each evaluation problem
 euts[target_col] = lr.predict(euts[input_cols])
 
-euts[['id', 'score']].to_csv(ddir + 'm4.csv', index=False)
+euts[['id', 'score']].to_csv(ddir + 'm4.2.csv', index=False)
 #%%
 #%%
 #%%
