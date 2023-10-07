@@ -67,8 +67,27 @@ actions = actions[(actions['action'] == 'correct_response') | (actions['action']
 actions = pd.get_dummies(actions,columns=['action'])
 actions = actions.drop(columns=['action_wrong_response'])
 
-peek = peek_df(actions,1000)
+# peek = peek_df(act_time,1000)
 
+#%% whittle actions further down to first attempts only
+
+if first_attempts:
+    act_time = data['action_logs'][['assignment_log_id','timestamp','problem_id','action']].copy()
+    act_time = pd.get_dummies(act_time, columns=['action'])
+    act_time = act_time[['assignment_log_id','timestamp','problem_id','action_correct_response','action_wrong_response','action_problem_finished']]
+
+    # 1 for first response on a problem
+    act_time['p_start'] = act_time['action_correct_response'] + act_time['action_wrong_response']
+
+    # keep only needed rows
+    act_time = act_time[(act_time['p_start'] ==1)]
+
+    # keep only first response action whether correct or not
+    act_time = act_time.sort_values('timestamp').drop_duplicates(subset=['assignment_log_id','problem_id','p_start'])
+    
+    # LKT format
+    act_time['CF..ansbin.'] = act_time['action_correct_response']
+    actions = act_time[['assignment_log_id','timestamp','problem_id','CF..ansbin.']].copy()
 #%% problem_details
 
 pr_d = actions.merge(data['problem_details'][['problem_id','problem_skill_code']],how='right',on='problem_id')
@@ -100,13 +119,16 @@ tuts_final = tuts_final.sort_values(by=['student_id','timestamp'])
 
 # update outcome var for LKT
 mapping = {0: "INCORRECT", 1: "CORRECT"}
-tuts_final['Outcome'] = tuts_final['action_correct_response'].replace(mapping)
+if first_attempts: 
+    tuts_final['Outcome'] = tuts_final['CF..ansbin.'].replace(mapping)
+else: 
+    tuts_final['Outcome'] = tuts_final['action_correct_response'].replace(mapping)
 
 # write csv
 odir = '/Users/WBR/walter/local_professional/EDM_Cup/'
-tuts_final[['student_id','timestamp','Outcome','problem_skill_code','mean_skill_score']].to_csv(odir + 'data_for_LKT.csv',index=False)
+tuts_final[['student_id','timestamp','Outcome','CF..ansbin.','problem_skill_code','mean_skill_score']].to_csv(odir + 'first-attempts_data_for_LKT.csv',index=False)
 
-
+#%%
 
 
 # euts = euts.merge(ar,how='right',on=['unit_test_assignment_log_id','problem_skill_code'])
