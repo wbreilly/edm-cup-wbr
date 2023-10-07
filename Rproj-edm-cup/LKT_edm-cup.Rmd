@@ -1,0 +1,139 @@
+---
+title: "LKT for edm-cup"
+output: html_notebook
+---
+
+## 
+Does this library work on my machine? Run examples
+What is the format for item order? 
+
+```{r}
+# library(LKT)
+library(tidyverse)
+
+lktpath = "~/walter/local_professional/LKT-master/"
+install.packages(lktpath, repos = NULL, type = "source")
+```
+
+```{r}
+load("~/walter/local_professional/LKT-master/data/samplelkt.rda")
+samp = setDT(samplelkt)
+sapply(samp, class)
+samp$KC..Default. = as.factor(samp$KC..Default.)
+modelob <- LKT(
+  data = samp, interc=FALSE,
+  components = c("Anon.Student.Id","KC..Default.","KC..Default."),
+  features = c("intercept", "intercept", "lineafm"))
+```
+```{r compute spacing predictors} 
+samp2 = samp
+# samp2$Outcome<-ifelse(tolower(samp2$Outcome)=="ok","CORRECT","INCORRECT")
+samp2$CF..ansbin.<-ifelse(tolower(samp2$Outcome)=="correct",1,0)
+samp2<-samp2[samp2$CF..ansbin.==0 | samp2$CF..ansbin.==1,] 
+
+     samp2 <- suppressWarnings(computeSpacingPredictors(samp2, "KC..Default.")) #allows recency, spacing, forgetting features to run
+
+    samp2 <- suppressWarnings(computeSpacingPredictors(samp2, "Anon.Student.Id")) #allows recency, spacing, forgetting features to run
+```
+
+```{r}
+modelob2 <- LKT(
+  data = samp2, interc=FALSE,
+  components = c("Anon.Student.Id","KC..Default.","KC..Default.","KC..Default."),
+  features = c("intercept", "intercept", "lineafm","recency"))
+```
+
+
+```{r Read EDM Cup Data}
+df = read_csv("~/walter/local_professional/EDM_Cup/first-attempts_data_for_LKT.csv")
+val = setDT(df)
+setnames(val,"student_id","Anon.Student.Id")
+val$problem_skill_code = as.factor(val$problem_skill_code)
+val$Anon.Student.Id = as.factor(val$Anon.Student.Id) 
+val$Outcome = as.factor(val$Outcome)
+
+# FYI: Examples.Rmd refers to two columns with nearly identical names "CF..ansbin" and "CF..ansbin."
+
+
+
+sapply(val, class)
+na_counts <- colSums(is.na(val))
+```
+
+```{r}
+# AFM
+    modelob <- LKT(
+      data = val, interc=FALSE,
+      components = c("Anon.Student.Id","problem_skill_code","problem_skill_code"),
+      features = c("intercept", "intercept", "lineafm"))
+```
+
+```{r}
+# Performance Factors Analysis (PFA) fixed effect version
+# ln(p(success)/1-p(success)) = intercept-student + intercept-problem_skill_code + linesuc-problem_skill_code + linefail-problem_skill_code 
+# trailing $ treats feature as level-specific for component 
+   system.time( modelob <- LKT(
+      data = val, interc=TRUE,
+      components = c("Anon.Student.Id","problem_skill_code","problem_skill_code","problem_skill_code"),
+      features = c("intercept", "intercept", "linesuc$","linefail$")))
+```
+
+```{r EDM spacing predictors}
+# val2 = val
+# val2$CF..ansbin.<-ifelse(tolower(val2$Outcome)=="correct",1,0)
+val<-val[val$CF..ansbin.==0 | val$CF..ansbin.==1,]
+
+val$CF..Time.<-as.numeric(as.POSIXct(as.character(val$timestamp),format="%Y-%m-%d %H:%M:%S"))
+
+# val$CF..reltime. = val$CF..Time.
+# val$Duration..sec = val$CF..Time.
+val <- computeSpacingPredictors(val, "problem_skill_code") #allows recency, spacing, forgetting features to run
+```
+
+```{r}
+
+val2 = val
+val2$CF..ansbin.= NULL
+
+system.time( model5 <- LKT(
+      data = val2, interc=FALSE,
+      components = c("Anon.Student.Id","problem_skill_code","problem_skill_code","problem_skill_code","problem_skill_code"),
+      features = c("intercept", "intercept", "linesuc","linefail","recency")))
+```
+
+
+```{r Recent Performance Factors Analysis} 
+system.time( model6 <- LKT(
+      data = val2, interc=FALSE,
+      components = c("Anon.Student.Id","problem_skill_code","problem_skill_code","problem_skill_code"),
+      features = c("intercept", "intercept", "propdec2","linefail"),fixedpars=c(.9)))
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
