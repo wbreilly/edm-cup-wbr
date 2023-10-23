@@ -1,37 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Thu Sep 28 15:35:47 2023
+Created on Mon Oct 23 14:11:57 2023
 
 @author: WBR
 """
 
-# data prep for LKT in R.
-
-# LKT follows DataShop format
-# Critical is that actions be in consecutive order grouped by learner id
-
-# will want at least correct and incorrect actions from action_logs
-# problem_skill_code from problem details
-# student_id from assignment_details
-# unit_test_assigment_log_id from assignment_relationships 
-
-# once models are estimated for each KC for each student, should be able to predict unit_test scores yeah? 
-
-# how many problems per problem_skill_code? # 243
-
-check = pr_d[['problem_id','problem_skill_code']].drop_duplicates()
-check.groupby('problem_skill_code')['problem_id'].count().mean() # 243
-
-# I guess what's strange is that we know future performance for training set. 
-# are we trying to predict performance of brand new students? No
-# So yeah this problem is more about discovering new features from clickstream...
-# not so much finding right model spec with vanilla predictors
-# Nevertheless, I should learn to use LKT
-
-# IMPORTANT, can't estimate KC for each student in python becuase of large N and data size
-# I believe that R does better with data size using sparse matrices or something
- 
 
 #%%
 import pandas as pd
@@ -59,17 +33,16 @@ data['action_logs']['timestamp'] = pd.to_datetime(data['action_logs']['timestamp
 # update column_names
 column_names = get_column_names(data)
 
-#%% action_logs : whittle down to correct, incorrect actions, timestamp, and id info
-
+# action_logs : whittle down to correct, incorrect actions, timestamp, and id info
 actions = data['action_logs'][['assignment_log_id','timestamp','problem_id','action']].copy()
-
 actions = actions[(actions['action'] == 'correct_response') | (actions['action'] == 'wrong_response')]
 actions = pd.get_dummies(actions,columns=['action'])
-actions = actions.drop(columns=['action_wrong_response'])
+actions = actions.drop(columns=['action_wrong_response']) 
 
-# peek = peek_df(act_time,1000)
 
-#%% whittle actions further down to first attempts only
+#%% optionally whittle actions down to first attempts
+
+first_attempts = True
 
 if first_attempts:
     act_time = data['action_logs'][['assignment_log_id','timestamp','problem_id','action']].copy()
@@ -83,14 +56,24 @@ if first_attempts:
     act_time = act_time[(act_time['p_start'] ==1)]
 
     # keep only first response action whether correct or not
-    act_time = act_time.sort_values('timestamp').drop_duplicates(subset=['assignment_log_id','problem_id','p_start'])
+    act_time = act_time.sort_values('timestamp').drop_duplicates(subset=['assignment_log_id','problem_id','p_start'],keep='first')
     
     # LKT format
     act_time['CF..ansbin.'] = act_time['action_correct_response']
     actions = act_time[['assignment_log_id','timestamp','problem_id','CF..ansbin.']].copy()
+    
+else:
+    actions['CF..ansbin.'] = actions['action_correct_response']
+    actions = actions[['assignment_log_id','timestamp','problem_id','CF..ansbin.']].copy()
+
+# check that first_attempts isn't messing things up too much 
+# nunique_first_attempts = len(actions.drop_duplicates(subset=['assignment_log_id','problem_id']))
+# nunique_all_attempts = len(actions.drop_duplicates(subset=['assignment_log_id','problem_id']))
+# nunique_first_attempts == nunique_all_attempts #True
+
 #%% problem_details
 
-pr_d = actions.merge(data['problem_details'][['problem_id','problem_skill_code']],how='right',on='problem_id')
+pr_d = actions.merge(data['problem_details'][['problem_id','problem_skill_code']].drop_duplicates(),how='left',on='problem_id')
   
 #%% assignment_details
  
@@ -98,61 +81,35 @@ ad = pr_d.merge(data['assignment_details'][['assignment_log_id','student_id']].d
 
 #%% assigment_relationships
  
-ar = data['assignment_relationships'].merge(pr_d,left_on='in_unit_assignment_log_id',right_on='assignment_log_id')
+ar = ad.merge(data['assignment_relationships'].drop_duplicates(),how='left',right_on='in_unit_assignment_log_id',left_on='assignment_log_id')
 
-#%% finally, add final score
+#%% filter ar for euts data
 
-tuts = data['training_unit_test_scores'].merge(data['problem_details'][['problem_id','problem_skill_code']].drop_duplicates(),how='left',on='problem_id')
-# euts = data['evaluation_unit_test_scores'].merge(data['problem_details'][['problem_id','problem_skill_code']].drop_duplicates(),how='left',on='problem_id')
+# only data that can map to euts
+euts = data['evaluation_unit_test_scores'].copy()
+euts_ids = euts['unit_test_assignment_log_id'].unique()
 
-# similar to target encoded skill in M2, but that was a mean of problem_skill_code only
-tuts_red = tuts.groupby(['unit_test_assignment_log_id','problem_skill_code'])['score'].mean().reset_index().drop_duplicates()
-tuts_red.columns = ['unit_test_assignment_log_id', 'problem_skill_code', 'mean_skill_score']
-# tuts_score = tuts.merge(tuts_red,on=['unit_test_assignment_log_id','problem_skill_code'])
+# filter
+ar_euts = ar[ar['unit_test_assignment_log_id'].isin(euts_ids)].copy()
+ar_euts['unit_test_assignment_log_id'].nunique() #10966 
 
-# yes
-tuts_final = tuts_red.merge(ar,how='inner',on=['unit_test_assignment_log_id','problem_skill_code'])
-# add back student_id
-tuts_final = tuts_final.merge(data['assignment_details'][['assignment_log_id','student_id']].drop_duplicates(),how='inner',on='assignment_log_id')
-# sort
-tuts_final = tuts_final.sort_values(by=['student_id','timestamp'])
+#%% final prep and write csv
 
 # update outcome var for LKT
 mapping = {0: "INCORRECT", 1: "CORRECT"}
 if first_attempts: 
-    tuts_final['Outcome'] = tuts_final['CF..ansbin.'].replace(mapping)
+    ar_euts['Outcome'] = ar_euts['CF..ansbin.'].replace(mapping)
 else: 
-    tuts_final['Outcome'] = tuts_final['action_correct_response'].replace(mapping)
+    ar_euts['Outcome'] = ar_euts['action_correct_response'].replace(mapping)
+
+# fill na psc
+ar_euts['problem_skill_code'].fillna('no_psc',inplace=True)
+
+# should be all 0s
+pnana = proportion_nans(ar_euts) # checks out
 
 # write csv
 odir = '/Users/WBR/walter/local_professional/EDM_Cup/'
-tuts_final[['student_id','timestamp','Outcome','CF..ansbin.','problem_skill_code','mean_skill_score']].to_csv(odir + 'first-attempts_data_for_LKT.csv',index=False)
+ar_euts.to_csv(odir + 'd4LKT_10-19.csv',index=False)
 
 #%%
-
-
-# euts = euts.merge(ar,how='right',on=['unit_test_assignment_log_id','problem_skill_code'])
-
-
-
-
-#%%
- 
-#%%
- 
-#%%
- 
-#%%
- 
-#%%
- 
-#%%
- 
-#%%
- 
-#%%
- 
-#%%
- 
-#%%
-  
