@@ -27,44 +27,42 @@ data, column_names = load_dataset(ddir)
 data['training_unit_test_scores'].columns = ['unit_test_assignment_log_id', 'problem_id', 'score']
 data['evaluation_unit_test_scores'].columns = ['id', 'unit_test_assignment_log_id', 'problem_id', 'score']
 
-# convert timestamp
-data['action_logs']['timestamp'] = pd.to_datetime(data['action_logs']['timestamp'], unit='s')
+# action_logs : whittle down to correct, incorrect actions, timestamp, and id info
+actions = data['action_logs'][['assignment_log_id','timestamp','problem_id','action']].copy()
+actions['timestamp'] = pd.to_datetime(actions['timestamp'], unit='s')
+actions = pd.get_dummies(actions,columns=['action'])
+
+# compute Durations
+durations = actions[['assignment_log_id','timestamp','problem_id','action_problem_started','action_problem_finished']].copy()
+durations = durations[(durations['action_problem_started'] ==1) | (durations['action_problem_finished'] == 1)]
+durations.sort_values('timestamp',inplace=True)
+durations['Duration..sec.'] = durations.groupby(['assignment_log_id','problem_id'])['timestamp'].transform('diff')
+durations = durations[['assignment_log_id','problem_id','Duration..sec.']].dropna()
+
+# filter actions for responses
+actions = actions[(actions['action_correct_response'] == 1) | (actions['action_wrong_response'] == 1)]
+actions = actions[['assignment_log_id','problem_id','timestamp','action_correct_response']] 
+
+# add durations to actions
+actions = actions.merge(durations,on=['assignment_log_id','problem_id'])
 
 # update column_names
 column_names = get_column_names(data)
-
-# action_logs : whittle down to correct, incorrect actions, timestamp, and id info
-actions = data['action_logs'][['assignment_log_id','timestamp','problem_id','action']].copy()
-actions = actions[(actions['action'] == 'correct_response') | (actions['action'] == 'wrong_response')]
-actions = pd.get_dummies(actions,columns=['action'])
-actions = actions.drop(columns=['action_wrong_response']) 
-
 
 #%% optionally whittle actions down to first attempts
 
 first_attempts = True
 
 if first_attempts:
-    act_time = data['action_logs'][['assignment_log_id','timestamp','problem_id','action']].copy()
-    act_time = pd.get_dummies(act_time, columns=['action'])
-    act_time = act_time[['assignment_log_id','timestamp','problem_id','action_correct_response','action_wrong_response','action_problem_finished']]
-
-    # 1 for first response on a problem
-    act_time['p_start'] = act_time['action_correct_response'] + act_time['action_wrong_response']
-
-    # keep only needed rows
-    act_time = act_time[(act_time['p_start'] ==1)]
-
+   
     # keep only first response action whether correct or not
-    act_time = act_time.sort_values('timestamp').drop_duplicates(subset=['assignment_log_id','problem_id','p_start'],keep='first')
+    actions = actions.sort_values('timestamp').drop_duplicates(subset=['assignment_log_id','problem_id'],keep='first')
     
-    # LKT format
-    act_time['CF..ansbin.'] = act_time['action_correct_response']
-    actions = act_time[['assignment_log_id','timestamp','problem_id','CF..ansbin.']].copy()
+    # LKT format accuracy
+    actions['CF..ansbin.'] = actions['action_correct_response']
     
 else:
     actions['CF..ansbin.'] = actions['action_correct_response']
-    actions = actions[['assignment_log_id','timestamp','problem_id','CF..ansbin.']].copy()
 
 # check that first_attempts isn't messing things up too much 
 # nunique_first_attempts = len(actions.drop_duplicates(subset=['assignment_log_id','problem_id']))
@@ -110,6 +108,6 @@ pnana = proportion_nans(ar_euts) # checks out
 
 # write csv
 odir = '/Users/WBR/walter/local_professional/EDM_Cup/'
-ar_euts.to_csv(odir + 'd4LKT_10-19.csv',index=False)
+ar_euts.to_csv(odir + 'd4LKT_10-24.csv',index=False)
 
 #%%
